@@ -12,10 +12,15 @@ const PORT = process.env.PORT || 3000;
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(session({
-    secret: 'mygallery-secret-key',
+    secret: process.env.SESSION_SECRET || 'mygallery-secret-key-change-in-production',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
+    cookie: { 
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+        sameSite: 'strict' // CSRF protection
+    }
 }));
 
 // Static files
@@ -135,10 +140,20 @@ app.post('/api/upload', isAuthenticated, upload.single('image'), (req, res) => {
 // Delete image (authenticated users only)
 app.delete('/api/images/:filename', isAuthenticated, (req, res) => {
     const filename = req.params.filename;
-    const filepath = path.join(__dirname, 'uploads', filename);
     
     // Security check: ensure filename doesn't contain path traversal
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+        return res.status(400).json({ error: 'Invalid filename' });
+    }
+    
+    const filepath = path.join(__dirname, 'uploads', filename);
+    const uploadsDir = path.join(__dirname, 'uploads');
+    
+    // Additional security: ensure the resolved path is within uploads directory
+    const resolvedPath = path.resolve(filepath);
+    const resolvedUploadsDir = path.resolve(uploadsDir);
+    
+    if (!resolvedPath.startsWith(resolvedUploadsDir + path.sep)) {
         return res.status(400).json({ error: 'Invalid filename' });
     }
     
